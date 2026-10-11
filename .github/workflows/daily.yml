@@ -1,4 +1,5 @@
 name: Daily Short
+# Makes one Short a day and schedules it on YouTube (see README.md).
 
 on:
   schedule:
