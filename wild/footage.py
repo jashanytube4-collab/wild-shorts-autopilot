@@ -290,6 +290,13 @@ def pool(subject: Subject) -> list[Asset]:
             photos += fn(subject, *args)
         except Exception as e:  # noqa: BLE001
             log.warning("%s failed for %s: %s", fn.__name__, subject.common, e)
+    if not subject.scenery and len(vids) + len(photos) < 14 and len(subject.scientific.split()) == 2:
+        genus = Subject(subject.common, subject.scientific.split()[0])     # rare species: borrow from its genus
+        try:
+            seen = {a.id for a in photos}
+            photos += [a for a in inat_photos(genus) if a.id not in seen]
+        except Exception as e:  # noqa: BLE001
+            log.warning("genus fallback failed for %s: %s", subject.common, e)
     vids.sort(key=lambda a: -a.score)
     photos.sort(key=lambda a: -a.score)
     good_v = [v for v in vids if v.score > 0.6]

@@ -1,5 +1,5 @@
 title: The Most Venomous Animal In The Ocean
-subject: box jellyfish | Chironex fleckeri
+subject: box jellyfish | Cubozoa
 mood: danger
 tags: box jellyfish, jellyfish, venomous animals, ocean, australia
 ---
