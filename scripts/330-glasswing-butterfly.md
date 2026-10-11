@@ -14,4 +14,5 @@ Scientists are copying the design for phone screens and solar panels.
 Glasswing caterpillars feed on toxic plants.
 The toxins stay in the adult's body, making it taste bad to predators.
 Males gather in groups, called leks, to attract females.
+In Spanish, it's sometimes called *espejitos*, meaning little mirrors.
 A butterfly you can almost see right through.

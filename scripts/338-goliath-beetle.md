@@ -15,4 +15,5 @@ And despite their size, they can *fly*.
 When they take off, they make a loud buzzing sound, like a small *helicopter*.
 Their bodies have bold black and white patterns.
 In some places, they're collected and sold as *pets*.
+Goliath beetles are named after the giant *Goliath* from the Bible story.
 A giant beetle with wings.
