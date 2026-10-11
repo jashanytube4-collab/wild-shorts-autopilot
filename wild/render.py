@@ -398,6 +398,12 @@ class Picker:
                 img = cv2.imread(str(p))
                 if not photo_ok(img) or has_people(img):
                     continue
+                if not s.scenery:
+                    from . import vision
+                    ok, why = vision.check([img], s.common, junk_only=True)
+                    if not ok:
+                        log.info("rejected %s for %s: %s", a.id, s.common, why)
+                        continue
             else:
                 d, w, h = footage.probe_video(p)
                 if d < max(2.0, need * 0.6) or min(w, h) < 360 or not clip_has_room(p, min(need, d) * 0.6):

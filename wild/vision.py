@@ -60,8 +60,9 @@ def _text(subject: str):
     return t, labels
 
 
-def check(frames: list[np.ndarray], subject: str) -> tuple[bool, str]:
-    """True unless another animal (or junk) clearly beats the subject on most frames."""
+def check(frames: list[np.ndarray], subject: str, junk_only: bool = False) -> tuple[bool, str]:
+    """True unless another animal (or junk) clearly beats the subject on most frames.
+    junk_only: for species-verified photos, only reject empty scenery, people or text."""
     m = _model()
     if m is None or not frames:
         return True, "unchecked"
@@ -77,7 +78,8 @@ def check(frames: list[np.ndarray], subject: str) -> tuple[bool, str]:
     why = ""
     for p in probs:
         sub = float(p[0])
-        j = int(np.argmax(p[1:])) + 1
+        lo = len(labels) - len(JUNK) if junk_only else 1
+        j = int(np.argmax(p[lo:])) + lo
         if p[j] > 0.40 and p[j] > 3.0 * sub:
             bad += 1
             why = f"looks like {labels[j]} ({p[j]:.2f} vs {sub:.2f})"
