@@ -1,5 +1,5 @@
 title: The Fish With A Chainsaw For A Nose
-subject: smalltooth sawfish | Pristis pectinata
+subject: sawfish | Pristidae
 mood: danger
 tags: sawfish, rays, ocean, endangered, weird fish
 ---

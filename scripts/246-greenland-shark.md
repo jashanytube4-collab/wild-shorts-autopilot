@@ -1,5 +1,5 @@
 title: The Shark That Can Live 400 Years
-subject: Greenland shark | Somniosus microcephalus
+subject: Greenland shark | Somniosus
 mood: curious
 tags: greenland shark, oldest animal, sharks, arctic, deep sea
 ---

@@ -112,8 +112,12 @@ def daily(dry_run: bool = False) -> int:
         if d.isoformat() in taken_days or datetime(d.year, d.month, d.day, h, m, tzinfo=tz) < now + timedelta(minutes=75):
             continue
         days.append(d)
+    order_file = config.SCRIPTS / "order.txt"      # posting order (clip-rich animals first); file names never change
+    if order_file.exists():
+        rank = {k.strip(): i for i, k in enumerate(order_file.read_text(encoding="utf-8").split()) if k.strip()}
+        scripts.sort(key=lambda s: rank.get(s.key, 10_000 + int(s.key.split("-")[0])))
     queue = [s for s in scripts if s.key not in st["posted"] and st["failed"].get(s.key, 0) < 2]
-    if not days:
+    if not days and not st.get("redo") and not st.get("swap"):
         log.info("schedule is full (%d posted)", len(st["posted"]))
         return 0
     yt = None
@@ -122,6 +126,13 @@ def daily(dry_run: bool = False) -> int:
         yt = YouTube(os.environ["YT_CLIENT_ID"], os.environ["YT_CLIENT_SECRET"], os.environ["YT_REFRESH_TOKEN"])
         log.info("channel: %s", yt.title)
         remote = {t for v in yt.recent() for t in v["tags"]}
+        from .youtube import QuotaError
+        try:
+            swap([list(x) for x in st.get("swap", [])], yt, st)
+            redo(list(st.get("redo", [])), yt, st)
+        except QuotaError as e:
+            log.warning("quota reached while replacing (%s); the rest waits for tomorrow", e)
+            return 0
     made = 0
     for day in days:
         while queue:
@@ -155,11 +166,11 @@ def daily(dry_run: bool = False) -> int:
     return 0
 
 
-def redo(keys: list[str]) -> int:
+def redo(keys: list[str], yt=None, st: dict | None = None) -> int:
     """Re-render already-scheduled Shorts and swap them in: upload the new one for the same slot, then delete the old."""
     from .youtube import YouTube, key_tag
-    st = load_state()
-    yt = YouTube(os.environ["YT_CLIENT_ID"], os.environ["YT_CLIENT_SECRET"], os.environ["YT_REFRESH_TOKEN"])
+    st = st if st is not None else load_state()
+    yt = yt or YouTube(os.environ["YT_CLIENT_ID"], os.environ["YT_CLIENT_SECRET"], os.environ["YT_REFRESH_TOKEN"])
     for key in keys:
         old = st["posted"].get(key)
         if not old or not old.get("publish_at"):
@@ -169,7 +180,11 @@ def redo(keys: list[str]) -> int:
         if when < datetime.now(when.tzinfo) + timedelta(minutes=30):
             log.warning("%s publishes too soon to replace", key)
             continue
-        info = make(load(next(config.SCRIPTS.glob(f"{key}.md"))))
+        try:
+            info = make(load(next(config.SCRIPTS.glob(f"{key}.md"))))
+        except Exception:  # noqa: BLE001 — keep the old upload if the new render fails
+            log.exception("re-render failed for %s; keeping the scheduled version", key)
+            continue
         vid = yt.upload(Path(info["file"]), title=info["title"], description=info["description"],
                         tags=info["tags"] + [key_tag(key)], publish_at=when, category="15")
         try:
@@ -177,8 +192,48 @@ def redo(keys: list[str]) -> int:
         except Exception as e:  # noqa: BLE001
             log.warning("could not delete old upload %s: %s", old["video_id"], e)
         st["posted"][key] = dict(old, video_id=vid, replaced=old["video_id"])
+        if key in st.get("redo", []):
+            st["redo"].remove(key)
         save_state(st)
+        commit_state(f"Replaced {key} with a new render")
         log.info("replaced %s: %s -> https://youtu.be/%s (%d of %d shots are clips)", key, old["video_id"], vid,
+                 info["videos"], info["shots"])
+    return 0
+
+
+def swap(pairs: list[list[str]], yt=None, st: dict | None = None) -> int:
+    """Give a scheduled slot to a different script: upload `new` for the slot of `old`, delete `old`'s upload,
+    and put `old` back in the queue."""
+    from .youtube import YouTube, key_tag
+    st = st if st is not None else load_state()
+    yt = yt or YouTube(os.environ["YT_CLIENT_ID"], os.environ["YT_CLIENT_SECRET"], os.environ["YT_REFRESH_TOKEN"])
+    for old_key, new_key in pairs:
+        old = st["posted"].get(old_key)
+        if not old or new_key in st["posted"]:
+            st["swap"] = [x for x in st.get("swap", []) if x != [old_key, new_key]]
+            continue
+        when = datetime.fromisoformat(old["publish_at"])
+        if when < datetime.now(when.tzinfo) + timedelta(minutes=40):
+            log.warning("%s publishes too soon to swap", old_key)
+            continue
+        try:
+            info = make(load(next(config.SCRIPTS.glob(f"{new_key}.md"))))
+        except Exception:  # noqa: BLE001
+            log.exception("render failed for %s; keeping %s", new_key, old_key)
+            continue
+        vid = yt.upload(Path(info["file"]), title=info["title"], description=info["description"],
+                        tags=info["tags"] + [key_tag(new_key)], publish_at=when, category="15")
+        try:
+            yt.api.videos().delete(id=old["video_id"]).execute()
+        except Exception as e:  # noqa: BLE001
+            log.warning("could not delete old upload %s: %s", old["video_id"], e)
+        del st["posted"][old_key]
+        st["posted"][new_key] = {"day": old["day"], "video_id": vid, "publish_at": old["publish_at"],
+                                 "title": info["title"]}
+        st["swap"] = [x for x in st.get("swap", []) if x != [old_key, new_key]]
+        save_state(st)
+        commit_state(f"Swapped {old_key} -> {new_key} for {old['day']}")
+        log.info("swapped %s -> %s (https://youtu.be/%s, %d of %d shots are clips)", old_key, new_key, vid,
                  info["videos"], info["shots"])
     return 0
 
@@ -193,11 +248,15 @@ def main(argv: list[str] | None = None) -> int:
     dl = sub.add_parser("daily")
     dl.add_argument("--dry-run", action="store_true")
     sub.add_parser("check")
+    sw = sub.add_parser("swap")
+    sw.add_argument("pairs", nargs="+", help="old:new")
     rd = sub.add_parser("redo")
     rd.add_argument("keys", nargs="+")
     a = ap.parse_args(argv)
     if a.cmd == "redo":
         return redo(a.keys)
+    if a.cmd == "swap":
+        return swap([x.split(":", 1) for x in a.pairs])
     if a.cmd == "make":
         for p in a.scripts:
             sc = load(Path(p))

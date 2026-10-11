@@ -3,7 +3,7 @@ name: Daily Short
 
 on:
   schedule:
-    - cron: "23 5 * * *"     # main run (UTC): makes and schedules the next days' Shorts
+    - cron: "23 7 * * *"     # main run (UTC), just after YouTube's daily upload quota resets
     - cron: "41 12 * * *"    # safety net: does nothing if the first run worked
   workflow_dispatch:
     inputs:

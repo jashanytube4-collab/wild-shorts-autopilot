@@ -289,22 +289,40 @@ def pexels(subject: Subject) -> list[Asset]:
     return out
 
 
+_FAKE = re.compile(r"(ai generated|ai|generated|cgi|render|rendering|3d|animation|animated|cartoon|illustration|"
+                   r"toy|plush|statue|sculpture|drawing|painting|model)", re.I)
+
+
 def pixabay(subject: Subject) -> list[Asset]:
+    """Real footage only: AI-generated, CGI and animated clips are dropped by their tags."""
     if not config.PIXABAY_KEY:
         return []
-    data = _get_json("https://pixabay.com/api/videos/",
-                     {"key": config.PIXABAY_KEY, "q": subject.common, "per_page": 60, "safesearch": "true"}, ttl_days=7)
-    out = []
-    for v in data.get("hits", []):
-        if not subject.scenery and not _names_in(v.get("tags", ""), subject):
-            continue
-        vids = v.get("videos", {})
-        f = next((vids[k] for k in ("large", "medium") if vids.get(k, {}).get("url") and vids[k].get("height")), None)
-        if not f or v.get("duration", 0) < 3 or min(f["width"], f["height"]) < 720:
-            continue
-        out.append(Asset(f"pixabay:{v['id']}", "video", f["url"], f["width"], f["height"], v.get("user", ""),
-                         "Pixabay Content License", "Pixabay", v.get("pageURL", ""), float(v.get("duration", 0)),
-                         score=1.4 - len(out) * 0.02))
+    out, seen = [], set()
+    queries = [subject.common]
+    cw = _words(subject.common)
+    if len(cw) > 1 and not subject.scenery:
+        queries.append(cw[-1])            # "honey badger" -> "badger"; the tag check below keeps it on-species
+    for q in queries:
+        data = _get_json("https://pixabay.com/api/videos/",
+                         {"key": config.PIXABAY_KEY, "q": q, "per_page": 100, "safesearch": "true",
+                          "video_type": "film", "order": "popular"}, ttl_days=7)
+        for v in data.get("hits", []):
+            tags = v.get("tags", "")
+            if v["id"] in seen or _FAKE.search(tags):
+                continue
+            if not subject.scenery and not _names_in(tags.replace(",", " , "), subject):
+                continue
+            vids = v.get("videos", {})
+            # 1080p is all a 1080x1920 Short needs; 4K only costs decode time
+            f = next((vids[k] for k in ("medium", "large") if vids.get(k, {}).get("url") and vids[k].get("height")
+                      and min(vids[k]["width"], vids[k]["height"]) >= 1000), None) or                 next((vids[k] for k in ("large", "medium") if vids.get(k, {}).get("url") and vids[k].get("height")), None)
+            if not f or v.get("duration", 0) < 3 or min(f["width"], f["height"]) < 720:
+                continue
+            seen.add(v["id"])
+            zoo = bool(re.search(r"(zoo|aquarium|captive|enclosure)", tags, re.I))
+            out.append(Asset(f"pixabay:{v['id']}", "video", f["url"], f["width"], f["height"], v.get("user", ""),
+                             "Pixabay Content License", "Pixabay", v.get("pageURL", ""), float(v.get("duration", 0)),
+                             score=1.6 - len(out) * 0.01 - (0.3 if zoo else 0) + (0.2 if f["height"] >= 2160 else 0)))
     return out
 
 

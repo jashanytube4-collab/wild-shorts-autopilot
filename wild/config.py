@@ -34,6 +34,13 @@ SCHEDULE = {
     "start_date": "2026-10-12",
 }
 
+_ENV = ROOT / ".secrets" / "keys.env"          # local runs; GitHub passes the same names as secrets
+if _ENV.exists():
+    for _ln in _ENV.read_text(encoding="utf-8").splitlines():
+        if "=" in _ln and not _ln.startswith("#"):
+            _k, _v = _ln.split("=", 1)
+            os.environ.setdefault(_k.strip(), _v.strip())
+
 # Optional free API keys. With them most shots are real video; without them the edit is mostly moving photos.
 PEXELS_KEY = os.environ.get("PEXELS_API_KEY", "")
 PIXABAY_KEY = os.environ.get("PIXABAY_API_KEY", "")
