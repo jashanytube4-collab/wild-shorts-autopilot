@@ -19,7 +19,7 @@ logging.basicConfig(level=logging.ERROR)
 def main() -> int:
     scripts = all_scripts()
     if len(sys.argv) > 1:
-        scripts = scripts[: int(sys.argv[1])]
+        scripts = scripts[int(sys.argv[2]) if len(sys.argv) > 2 else 0: int(sys.argv[1])]
     seen: dict[str, int] = {}
     weak = 0
     for sc in scripts:

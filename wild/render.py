@@ -238,6 +238,22 @@ def photo_ok(img: np.ndarray) -> bool:
     return hsv[:, :, 1].mean() > 22                          # colour photos only (no old black-and-white shots)
 
 
+_HOG = None
+
+
+def has_people(img: np.ndarray) -> bool:
+    """Zoo visitors, keepers, tourists: an upright person in frame (OpenCV's pedestrian detector)."""
+    global _HOG
+    if _HOG is None:
+        _HOG = cv2.HOGDescriptor()
+        _HOG.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
+    h, w = img.shape[:2]
+    k = 480 / max(h, w)
+    small = cv2.resize(img, (int(w * k), int(h * k)), interpolation=cv2.INTER_AREA)
+    rects, weights = _HOG.detectMultiScale(small, winStride=(8, 8), padding=(8, 8), scale=1.06)
+    return any(float(wt) > 0.9 for wt in np.ravel(weights)) if len(rects) else False
+
+
 def appeal(img: np.ndarray) -> float:
     """How eye-catching a frame is: colourfulness (Hasler-Suesstrunk) plus fine detail."""
     small = cv2.resize(img, (240, int(240 * img.shape[0] / img.shape[1])), interpolation=cv2.INTER_AREA)
@@ -333,7 +349,7 @@ class Picker:
                 if min(w, h) < 1000 or max(W / w, H / h) > 2.3:
                     continue
                 img = _grab(p, min(1.0, d / 3))
-            if img is None or (a.kind == "photo" and not photo_ok(img)):
+            if img is None or (a.kind == "photo" and not photo_ok(img)) or has_people(img):
                 continue
             sc = appeal(img) + (0.6 if a.kind == "video" else 0) + (0.4 if a.h > a.w else 0)
             if sc > best_score:
@@ -344,10 +360,15 @@ class Picker:
         return best
 
     def take(self, s: Subject, need: float) -> tuple[Asset, Path] | None:
+        return self._take(s, need, strict=True) or self._take(s, need, strict=False)
+
+    def _take(self, s: Subject, need: float, strict: bool) -> tuple[Asset, Path] | None:
         pool = self._pool(s)
         for a in pool:
             if a.id in self.used:
                 continue
+            if strict and (max(W / max(1, a.w), H / max(1, a.h)) > (2.2 if a.kind == "photo" else 2.3)):
+                continue                   # too small / too wide to fill the frame: only if nothing better is left
             if a.kind == "video" and a.duration and a.duration < need * 0.6:
                 continue
             p = footage.fetch(a)
@@ -356,11 +377,17 @@ class Picker:
                 continue
             if a.kind == "photo":
                 img = cv2.imread(str(p))
-                if not photo_ok(img):
+                if not photo_ok(img) or has_people(img):
                     continue
             else:
                 d, w, h = footage.probe_video(p)
                 if d < max(2.0, need * 0.6) or min(w, h) < 360 or not clip_has_room(p, min(need, d) * 0.6):
+                    continue
+                if strict and max(W / w, H / h) > 2.3:
+                    self.used.pop(a.id, None)      # real size was smaller than listed: leave it for the relaxed pass
+                    continue
+                frame = _grab(p, min(d / 2, 2.0))
+                if frame is not None and has_people(frame):
                     continue
                 a.duration, a.w, a.h = d, w, h
             self.good.setdefault(s.key, []).append((a, p))

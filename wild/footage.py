@@ -88,8 +88,36 @@ def _words(s: str) -> list[str]:
     return re.findall(r"[a-z0-9]+", s.lower())
 
 
+_QUALIFIERS = set("""pygmy dwarf lesser greater giant little african asian american red black white grey gray
+brown golden northern southern eastern western false sea river mountain desert spotted striped banded blue green
+yellow indian chinese japanese european australian bornean sumatran malayan arctic pacific atlantic""".split())
+
+
 def _names_in(text: str, subject: Subject) -> bool:
-    """Does a title/slug/tag string name this subject?"""
+    """Does a title/slug/tag string name this subject? "Pygmy hippopotamus" does not name the hippopotamus."""
+    t = " ".join(_words(text))
+    sci = " ".join(_words(subject.scientific)) if subject.scientific else ""
+    if sci and re.search(rf"(^| ){re.escape(sci)}( |$)", t):
+        return True
+    own = set(_words(subject.common))
+    for c in _common_forms(subject):
+        for m in re.finditer(rf"(^| ){re.escape(c)}( |$)", t):
+            before = t[: m.start()].split()
+            if before and before[-1] in _QUALIFIERS and before[-1] not in own:
+                continue
+            return True
+    return False
+
+
+def _common_forms(subject: Subject) -> list[str]:
+    cw = _words(subject.common)
+    if not cw:
+        return []
+    alt = cw[:-1] + [cw[-1][:-1]] if cw[-1].endswith("s") else cw[:-1] + [cw[-1] + "s"]
+    return [" ".join(cw), " ".join(alt)]
+
+
+def _names_in_old(text: str, subject: Subject) -> bool:
     t = " ".join(_words(text))
     cands = []
     if subject.scientific:
@@ -127,6 +155,9 @@ def inat_photos(subject: Subject, limit: int = 90) -> list[Asset]:
         "order_by": "votes", "per_page": 100, "photos": "true", "captive": "false"})
     out = []
     for rank, ob in enumerate(data.get("results", [])):
+        ann = {(a.get("controlled_attribute_id"), a.get("controlled_value_id")) for a in ob.get("annotations", [])}
+        if (17, 19) in ann or any(t == 22 and v not in (23, None) for t, v in ann):
+            continue                       # dead, or only a track / bone / feather / scat
         for k, ph in enumerate(ob.get("photos", [])[:2]):
             lic = ph.get("license_code")
             if lic not in _INAT_LIC:
@@ -157,7 +188,8 @@ _BAD_TITLE = re.compile(
 _BAD_CATS = re.compile(r"paintings|drawings|engravings|lithograph|illustrations|maps|watercolou?r|prints|"
                        r"specimens|taxiderm|museum|skeletons|fossils|stamps|art\b|sculptures|historical images|"
                        r"\b1[5-9]\d\d\b|scans|satellite|landsat|sentinel|copernicus|\besa\b|nasa|iss expedition|expedition \d+|"
-                       r"from space|international space station|astronaut|alexander gerst|false.colou?r", re.I)
+                       r"from space|international space station|astronaut|alexander gerst|false.colou?r|zoos?|tierpark|"
+                       r"zoological gardens?|in captivity|animals in zoos", re.I)
 _OK_LIC = re.compile(r"^(cc0|public domain|pd|cc by(-sa)? \d|cc-by(-sa)?-\d|attribution)", re.I)
 
 
@@ -297,6 +329,9 @@ def pool(subject: Subject) -> list[Asset]:
             photos += [a for a in inat_photos(genus) if a.id not in seen]
         except Exception as e:  # noqa: BLE001
             log.warning("genus fallback failed for %s: %s", subject.common, e)
+    for a in photos:
+        if a.origin == "iNaturalist":   # research grade, wild (not captive): the most natural-looking photos
+            a.score += 0.35
     vids.sort(key=lambda a: -a.score)
     photos.sort(key=lambda a: -a.score)
     good_v = [v for v in vids if v.score > 0.6]
