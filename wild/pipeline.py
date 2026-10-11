@@ -117,6 +117,8 @@ def daily(dry_run: bool = False) -> int:
         rank = {k.strip(): i for i, k in enumerate(order_file.read_text(encoding="utf-8").split()) if k.strip()}
         scripts.sort(key=lambda s: rank.get(s.key, 10_000 + int(s.key.split("-")[0])))
     queue = [s for s in scripts if s.key not in st["posted"] and st["failed"].get(s.key, 0) < 2]
+    if dry_run and not days:
+        days = [start]                       # a test run always renders the next Short
     if not days and not st.get("redo") and not st.get("swap"):
         log.info("schedule is full (%d posted)", len(st["posted"]))
         return 0

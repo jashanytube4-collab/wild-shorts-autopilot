@@ -44,7 +44,7 @@ jobs:
       - name: Python packages
         run: |
           pip install -r requirements.txt
-          pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
           pip install open_clip_torch==2.29.0
 
       - name: Species-check model cache
