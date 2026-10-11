@@ -1,0 +1,78 @@
+name: Daily Short
+
+on:
+  schedule:
+    - cron: "23 5 * * *"     # main run (UTC): makes and schedules the next days' Shorts
+    - cron: "41 12 * * *"    # safety net: does nothing if the first run worked
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Test mode: make the next Short but do NOT upload (download it from the run page)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: daily-short
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Keep the schedule switched on
+        # GitHub pauses scheduled workflows after 60 days without commits; re-enabling every run prevents it.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/daily.yml/enable" || true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: System packages
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
+      - name: Python packages
+        run: pip install -r requirements.txt
+
+      - name: Search cache
+        uses: actions/cache@v4
+        with:
+          path: work/cache/search
+          key: search-${{ github.run_id }}
+          restore-keys: search-
+
+      - name: Make and schedule Shorts
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          WILD_GIT_PUSH: ${{ inputs.dry_run && '0' || '1' }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          git config user.name "wild-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ "$DRY_RUN" = "true" ]; then python -m wild.pipeline daily --dry-run; exit 0; fi
+          if [ -z "$YT_REFRESH_TOKEN" ]; then
+            echo "::notice::YouTube is not connected yet (YT_* secrets missing). Nothing to do."
+            exit 0
+          fi
+          python -m wild.pipeline daily
+
+      - name: Keep the test video
+        if: ${{ inputs.dry_run }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-short
+          path: out/
+          retention-days: 7
