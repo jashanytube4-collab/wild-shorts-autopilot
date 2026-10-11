@@ -84,6 +84,16 @@ def slot_time(day: date, key: str) -> datetime:
     return datetime(day.year, day.month, day.day, m // 60, m % 60, tzinfo=tz)
 
 
+def replacement_slot(old: dict, key: str, margin_min: int) -> datetime | None:
+    """Publish time for a replacement upload: the day's slot in the current window (so window changes reach
+    already-scheduled days), else the old time if the new one is too close, else None (too late to replace)."""
+    soon = datetime.now(ZoneInfo(config.SCHEDULE["timezone"])) + timedelta(minutes=margin_min)
+    for when in (slot_time(date.fromisoformat(old["day"]), key), datetime.fromisoformat(old["publish_at"])):
+        if when >= soon:
+            return when
+    return None
+
+
 def commit_state(msg: str) -> None:
     if os.environ.get("WILD_GIT_PUSH") != "1":
         return
@@ -178,8 +188,8 @@ def redo(keys: list[str], yt=None, st: dict | None = None) -> int:
         if not old or not old.get("publish_at"):
             log.warning("%s is not scheduled; skipping", key)
             continue
-        when = datetime.fromisoformat(old["publish_at"])
-        if when < datetime.now(when.tzinfo) + timedelta(minutes=30):
+        when = replacement_slot(old, key, 30)
+        if when is None:
             log.warning("%s publishes too soon to replace", key)
             continue
         try:
@@ -193,7 +203,7 @@ def redo(keys: list[str], yt=None, st: dict | None = None) -> int:
             yt.api.videos().delete(id=old["video_id"]).execute()
         except Exception as e:  # noqa: BLE001
             log.warning("could not delete old upload %s: %s", old["video_id"], e)
-        st["posted"][key] = dict(old, video_id=vid, replaced=old["video_id"])
+        st["posted"][key] = dict(old, video_id=vid, replaced=old["video_id"], publish_at=when.isoformat())
         if key in st.get("redo", []):
             st["redo"].remove(key)
         save_state(st)
@@ -214,8 +224,8 @@ def swap(pairs: list[list[str]], yt=None, st: dict | None = None) -> int:
         if not old or new_key in st["posted"]:
             st["swap"] = [x for x in st.get("swap", []) if x != [old_key, new_key]]
             continue
-        when = datetime.fromisoformat(old["publish_at"])
-        if when < datetime.now(when.tzinfo) + timedelta(minutes=40):
+        when = replacement_slot(old, new_key, 40)
+        if when is None:
             log.warning("%s publishes too soon to swap", old_key)
             continue
         try:
@@ -230,7 +240,7 @@ def swap(pairs: list[list[str]], yt=None, st: dict | None = None) -> int:
         except Exception as e:  # noqa: BLE001
             log.warning("could not delete old upload %s: %s", old["video_id"], e)
         del st["posted"][old_key]
-        st["posted"][new_key] = {"day": old["day"], "video_id": vid, "publish_at": old["publish_at"],
+        st["posted"][new_key] = {"day": old["day"], "video_id": vid, "publish_at": when.isoformat(),
                                  "title": info["title"]}
         st["swap"] = [x for x in st.get("swap", []) if x != [old_key, new_key]]
         save_state(st)

@@ -28,8 +28,8 @@ SHOT_SECONDS = 2.7                 # average time between cuts (top animal-fact 
 MUSIC = {"level_db": -5.0, "duck_db": -8.0}
 
 SCHEDULE = {
-    "timezone": "America/New_York",
-    "window": ("11:00", "11:59"),  # random minute each day
+    "timezone": "Asia/Kolkata",
+    "window": ("04:15", "04:40"),  # random minute each day (IST)
     "days_ahead": 2,               # keep this many future days uploaded and scheduled
     "start_date": "2026-10-12",
 }
