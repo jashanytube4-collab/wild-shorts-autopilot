@@ -30,7 +30,7 @@ def main(path: str) -> int:
             continue
         n += 1
         out = SCRIPTS / f"{n:03d}-{slug}.md"
-        out.write_text(body.strip() + "\n", encoding="utf-8")
+        out.write_bytes((body.strip() + "\n").replace("\r\n", "\n").encode("utf-8"))
         issues = problems(load(out))
         if issues:
             bad += 1
