@@ -1,12 +1,6 @@
 {
  "failed": {},
  "posted": {
-  "001-electric-eel": {
-   "day": "2026-10-12",
-   "publish_at": "2026-10-12T11:00:00-04:00",
-   "title": "Why You Should Never Touch An Electric Eel",
-   "video_id": "GpqaaMTK4g4"
-  },
   "002-box-jellyfish": {
    "day": "2026-10-13",
    "publish_at": "2026-10-13T11:15:00-04:00",
@@ -18,6 +12,25 @@
    "publish_at": "2026-10-14T11:53:00-04:00",
    "title": "This Tiny Octopus Can Kill 26 People",
    "video_id": "qqX11jxCOjg"
+  },
+  "074-tiger-stripes": {
+   "day": "2026-10-12",
+   "publish_at": "2026-10-12T11:00:00-04:00",
+   "title": "Tigers Have Striped Skin, Not Just Fur",
+   "video_id": "ScHR1hqskfc"
   }
- }
+ },
+ "redo": [
+  "074-tiger-stripes"
+ ],
+ "swap": [
+  [
+   "002-box-jellyfish",
+   "034-cheetah"
+  ],
+  [
+   "003-blue-ringed-octopus",
+   "139-giraffe-neck"
+  ]
+ ]
 }

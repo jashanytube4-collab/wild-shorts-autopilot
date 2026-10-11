@@ -310,7 +310,7 @@ def pixabay(subject: Subject) -> list[Asset]:
             tags = v.get("tags", "")
             if v["id"] in seen or _FAKE.search(tags):
                 continue
-            if not subject.scenery and not _names_in(tags.replace(",", " , "), subject):
+            if not subject.scenery and not _lead_tag(tags, subject):
                 continue
             vids = v.get("videos", {})
             # 1080p is all a 1080x1920 Short needs; 4K only costs decode time
@@ -324,6 +324,49 @@ def pixabay(subject: Subject) -> list[Asset]:
                              "Pixabay Content License", "Pixabay", v.get("pageURL", ""), float(v.get("duration", 0)),
                              score=1.6 - len(out) * 0.01 - (0.3 if zoo else 0) + (0.2 if f["height"] >= 2160 else 0)))
     return out
+
+
+_OTHER = None
+
+
+def _other_animals() -> set[str]:
+    """Names of animals that are NOT the subject, to catch clips whose main tag is another animal."""
+    global _OTHER
+    if _OTHER is None:
+        from .script import all_scripts
+        names = set()
+        try:
+            for sc in all_scripts():
+                for l in sc.lines:
+                    if not l.visual.scenery:
+                        names.add(" ".join(_words(l.visual.common)))
+                        names.add(_words(l.visual.common)[-1])
+        except Exception:  # noqa: BLE001
+            pass
+        names |= set("""lion lioness tiger wolf dog cat bear fox deer horse cow sheep goat pig bird eagle hawk owl duck
+            goose swan butterfly moth bee wasp ant spider snake lizard frog toad turtle fish shark whale dolphin seal
+            monkey ape gorilla elephant giraffe zebra rhino hippo crocodile alligator leopard cheetah jaguar puma lynx
+            rabbit squirrel mouse rat bat parrot penguin flamingo heron crab octopus jellyfish insect beetle""".split())
+        _OTHER = names
+    return _OTHER
+
+
+def _lead_tag(tags: str, subject: Subject) -> bool:
+    """Pixabay uploaders list the main subject first: the animal must be one of the first three tags,
+    with no other animal named before it ("tiger swallowtail" and "lion, tiger, ..." are rejected)."""
+    tl = [t.strip().lower() for t in tags.split(",") if t.strip()]
+    forms = {f for f in _common_forms(subject)}
+    if subject.scientific:
+        forms.add(" ".join(_words(subject.scientific)))
+    own = set(_words(subject.common))
+    for i, t in enumerate(tl[:3]):
+        tw = " ".join(_words(t))
+        hit = tw in forms or any(tw.endswith(" " + f) and tw.split()[-len(f.split()) - 1] not in _QUALIFIERS
+                                 for f in forms)
+        if hit:
+            others = _other_animals() - forms - own
+            return not any(" ".join(_words(x)) in others for x in tl[:i])
+    return False
 
 
 # ---- pool ---------------------------------------------------------------------------------------------------

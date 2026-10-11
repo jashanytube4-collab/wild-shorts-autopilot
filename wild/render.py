@@ -234,6 +234,9 @@ def photo_ok(img: np.ndarray) -> bool:
         return False
     if (gray > 238).mean() > 0.35:            # specimen-on-white, scans, diagrams
         return False
+    c = [gray[:12, :12].mean(), gray[:12, -12:].mean(), gray[-12:, :12].mean(), gray[-12:, -12:].mean()]
+    if sum(x < 10 for x in c) >= 2 and gray[30:66, 30:66].mean() > 60:   # black circular edge: shot through a scope
+        return False
     hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
     return hsv[:, :, 1].mean() > 22                          # colour photos only (no old black-and-white shots)
 
@@ -353,6 +356,8 @@ class Picker:
                 img = _grab(p, min(1.0, d / 3))
             if img is None or (a.kind == "photo" and not photo_ok(img)) or has_people(img):
                 continue
+            if a.kind == "video" and not species_ok(a, p, d, s):
+                continue
             sc = appeal(img) + (0.6 if a.kind == "video" else 0) + (0.4 if a.h > a.w else 0)
             if sc > best_score:
                 best, best_score = (a, p), sc
@@ -403,6 +408,8 @@ class Picker:
                 frame = _grab(p, min(d / 2, 2.0))
                 if frame is not None and has_people(frame):
                     continue
+                if not species_ok(a, p, d, s):
+                    continue
                 a.duration, a.w, a.h = d, w, h
             self.good.setdefault(s.key, []).append((a, p))
             return a, p
@@ -440,6 +447,18 @@ def assign(shots: list[Shot], subject: Subject, picker: Picker, rng: random.Rand
             sh.clip_start = st if st is not None else clean_window(sh.path, span, rng)
             seen.append((sh.clip_start, sh.clip_start + span))
         picker.last_id = sh.asset.id
+
+
+def species_ok(a: Asset, p: Path, d: float, s: Subject) -> bool:
+    """Stock clips are tagged by their uploaders; look at three frames to confirm the animal."""
+    if a.origin not in ("Pixabay", "Pexels") or s.scenery:
+        return True
+    from . import vision
+    frames = [f for f in (_grab(p, d * k) for k in (0.2, 0.5, 0.8)) if f is not None]
+    ok, why = vision.check(frames, s.common)
+    if not ok:
+        log.info("rejected %s for %s: %s", a.id, s.common, why)
+    return ok
 
 
 def _grab(path: Path, t: float) -> np.ndarray | None:

@@ -42,7 +42,16 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
 
       - name: Python packages
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install open_clip_torch==2.29.0
+
+      - name: Species-check model cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: clip-vit-b-32-openai
 
       - name: Search cache
         uses: actions/cache@v4
