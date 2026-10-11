@@ -219,12 +219,15 @@ def commons(subject: Subject, kind: str, limit: int = 50) -> list[Asset]:
             name = title.split(":", 1)[-1].rsplit(".", 1)[0]
             if _BAD_TITLE.search(name.replace("_", " ")):
                 continue
-            if not subject.scenery and not _names_in(name, subject):
-                continue
-            if subject.scenery and not all(w in _words(name) for w in _words(subject.common)[:2]):
-                continue
             ii = (p.get("imageinfo") or [{}])[0]
             em = ii.get("extmetadata", {})
+            if not subject.scenery and not _names_in(name, subject):
+                meta = _clean(em.get("Categories", {}).get("value", "")) + " " +                     _clean(em.get("ImageDescription", {}).get("value", ""))[:600]
+                sci = subject.scientific.lower()
+                if not (len(sci.split()) >= 2 and sci in meta.lower().replace("_", " ")):
+                    continue               # the species must be named in the title, or by its scientific name
+            if subject.scenery and not all(w in _words(name) for w in _words(subject.common)[:2]):
+                continue
             lic = _clean(em.get("LicenseShortName", {}).get("value", ""))
             if not _OK_LIC.search(lic):
                 continue

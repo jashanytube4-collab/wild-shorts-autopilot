@@ -321,6 +321,8 @@ class Picker:
         self.pools: dict[str, list[Asset]] = {}
         self.used: dict[str, int] = {}
         self.good: dict[str, list[tuple[Asset, Path]]] = {}
+        self.windows: dict[str, list[tuple[float, float]]] = {}   # parts of each clip already shown
+        self.last_id = ""
 
     def _pool(self, s: Subject) -> list[Asset]:
         if s.key not in self.pools:
@@ -360,12 +362,24 @@ class Picker:
         return best
 
     def take(self, s: Subject, need: float) -> tuple[Asset, Path] | None:
-        return self._take(s, need, strict=True) or self._take(s, need, strict=False)
+        """Clips beat photos: a fresh clip, then an unseen part of a clip already used, then a photo."""
+        return (self._take(s, need, strict=True, kinds=("video",)) or self.reuse_clip(s, need)
+                or self._take(s, need, strict=True, kinds=("photo",)) or self._take(s, need, strict=False))
 
-    def _take(self, s: Subject, need: float, strict: bool) -> tuple[Asset, Path] | None:
+    def reuse_clip(self, s: Subject, need: float) -> tuple[Asset, Path] | None:
+        for a, p in self.good.get(s.key, []):
+            if a.kind != "video" or a.id == self.last_id or max(W / a.w, H / a.h) > 2.3:
+                continue
+            span = need * (1.0 if a.duration >= need + 0.4 else max(0.6, (a.duration - 0.3) / need))
+            if clean_window(p, span, self.rng, self.windows.get(a.id, [])) is not None:
+                self.used[a.id] = self.used.get(a.id, 0) + 1
+                return a, p
+        return None
+
+    def _take(self, s: Subject, need: float, strict: bool, kinds: tuple = ("video", "photo")) -> tuple[Asset, Path] | None:
         pool = self._pool(s)
         for a in pool:
-            if a.id in self.used:
+            if a.id in self.used or a.kind not in kinds:
                 continue
             if strict and (max(W / max(1, a.w), H / max(1, a.h)) > (2.2 if a.kind == "photo" else 2.3)):
                 continue                   # too small / too wide to fill the frame: only if nothing better is left
@@ -393,7 +407,9 @@ class Picker:
             self.good.setdefault(s.key, []).append((a, p))
             return a, p
         # out of fresh material: reuse the least-used good one (a different move/crop keeps it from feeling repeated)
-        good = self.good.get(s.key, [])
+        if kinds != ("video", "photo"):
+            return None
+        good = [ap for ap in self.good.get(s.key, []) if ap[0].id != self.last_id] or self.good.get(s.key, [])
         if good:
             a, p = min(good, key=lambda ap: self.used.get(ap[0].id, 0))
             self.used[a.id] = self.used.get(a.id, 0) + 1
@@ -418,7 +434,12 @@ def assign(shots: list[Shot], subject: Subject, picker: Picker, rng: random.Rand
         if sh.asset.kind == "video":
             d = sh.asset.duration
             sh.speed = 1.0 if d >= sh.dur + 0.4 else max(0.6, (d - 0.3) / sh.dur)
-            sh.clip_start = clean_window(sh.path, sh.dur * sh.speed, rng)
+            span = sh.dur * sh.speed
+            seen = picker.windows.setdefault(sh.asset.id, [])
+            st = clean_window(sh.path, span, rng, seen)
+            sh.clip_start = st if st is not None else clean_window(sh.path, span, rng)
+            seen.append((sh.clip_start, sh.clip_start + span))
+        picker.last_id = sh.asset.id
 
 
 def _grab(path: Path, t: float) -> np.ndarray | None:
@@ -461,20 +482,26 @@ def scan_clip(path: Path) -> list[tuple[float, bool, float]]:
     return res
 
 
-def clean_window(path: Path, span: float, rng: random.Random) -> float:
-    """Start time of a window of `span` seconds with no title cards or cuts, preferring the liveliest one."""
+def clean_window(path: Path, span: float, rng: random.Random, avoid: list | None = None) -> float | None:
+    """Start time of a window of `span` seconds with no title cards or cuts, preferring the liveliest one.
+    With `avoid` (parts already shown), returns None when no fresh window is left."""
     sc = scan_clip(path)
     if not sc:
-        return 0.0
+        return None if avoid else 0.0
     k = max(1, int(math.ceil(span * 4)) + 1)
     best, best_v = 0.0, -1.0
     for i in range(0, max(1, len(sc) - k + 1)):
         win = sc[i:i + k]
         if len(win) < k or not all(u for _, u, _ in win):
             continue
+        a0, a1 = win[0][0], win[0][0] + span
+        if avoid and any(a0 < b1 + 1.0 and a1 > b0 - 1.0 for b0, b1 in avoid):
+            continue
         v = sum(x for _, _, x in win) / k + rng.random() * 2
         if v > best_v:
             best, best_v = win[0][0], v
+    if best_v < 0 and avoid:
+        return None
     if best_v < 0:                       # no clean window: the longest usable run
         run_start, best_len, cur = 0.0, 0, 0
         for i, (t, u, _) in enumerate(sc):

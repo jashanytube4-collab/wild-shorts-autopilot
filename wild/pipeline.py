@@ -155,6 +155,34 @@ def daily(dry_run: bool = False) -> int:
     return 0
 
 
+def redo(keys: list[str]) -> int:
+    """Re-render already-scheduled Shorts and swap them in: upload the new one for the same slot, then delete the old."""
+    from .youtube import YouTube, key_tag
+    st = load_state()
+    yt = YouTube(os.environ["YT_CLIENT_ID"], os.environ["YT_CLIENT_SECRET"], os.environ["YT_REFRESH_TOKEN"])
+    for key in keys:
+        old = st["posted"].get(key)
+        if not old or not old.get("publish_at"):
+            log.warning("%s is not scheduled; skipping", key)
+            continue
+        when = datetime.fromisoformat(old["publish_at"])
+        if when < datetime.now(when.tzinfo) + timedelta(minutes=30):
+            log.warning("%s publishes too soon to replace", key)
+            continue
+        info = make(load(next(config.SCRIPTS.glob(f"{key}.md"))))
+        vid = yt.upload(Path(info["file"]), title=info["title"], description=info["description"],
+                        tags=info["tags"] + [key_tag(key)], publish_at=when, category="15")
+        try:
+            yt.api.videos().delete(id=old["video_id"]).execute()
+        except Exception as e:  # noqa: BLE001
+            log.warning("could not delete old upload %s: %s", old["video_id"], e)
+        st["posted"][key] = dict(old, video_id=vid, replaced=old["video_id"])
+        save_state(st)
+        log.info("replaced %s: %s -> https://youtu.be/%s (%d of %d shots are clips)", key, old["video_id"], vid,
+                 info["videos"], info["shots"])
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s",
                         datefmt="%H:%M:%S")
@@ -165,7 +193,11 @@ def main(argv: list[str] | None = None) -> int:
     dl = sub.add_parser("daily")
     dl.add_argument("--dry-run", action="store_true")
     sub.add_parser("check")
+    rd = sub.add_parser("redo")
+    rd.add_argument("keys", nargs="+")
     a = ap.parse_args(argv)
+    if a.cmd == "redo":
+        return redo(a.keys)
     if a.cmd == "make":
         for p in a.scripts:
             sc = load(Path(p))
