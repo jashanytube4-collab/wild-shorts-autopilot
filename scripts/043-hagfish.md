@@ -1,5 +1,5 @@
 title: The Slimiest Animal In The World
-subject: Pacific hagfish | Eptatretus stoutii
+subject: hagfish | Myxini
 mood: curious
 tags: hagfish, slime, weird animals, ocean, deep sea
 ---

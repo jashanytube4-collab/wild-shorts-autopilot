@@ -1,5 +1,5 @@
 title: Why Eating This Fish Can Kill You
-subject: pufferfish | Takifugu rubripes
+subject: pufferfish | Tetraodontidae
 mood: danger
 tags: pufferfish, fugu, poisonous fish, japan, tetrodotoxin
 ---
