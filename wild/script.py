@@ -134,6 +134,8 @@ def problems(sc: Script) -> list[str]:
     for l in sc.lines:
         if "*" in l.text or "[" in l.text:
             out.append(f"markup left in: {l.text[:40]}")
+        if re.search(r"(hmm|wait|actually, it was|todo|fixme)", l.text, re.I):
+            out.append(f"draft note left in: {l.text[:40]}")
         if len(l.words) > 26:
             out.append(f"long line ({len(l.words)} words): {l.text[:40]}")
     return out
